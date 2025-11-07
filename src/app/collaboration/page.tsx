@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Video, Mic, MicOff, Monitor, MessageSquare, Users } from 'lucide-react';
 import Link from 'next/link';
-import type { Session, Message } from '../../../../../packages/shared/src/index';
+import type { Session, Message } from '@/lib';
 
 const SESSIONS_QUERY = gql`
   query Sessions {

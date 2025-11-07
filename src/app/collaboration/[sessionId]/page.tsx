@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Video, Mic, MicOff, Monitor, MessageSquare, Users, ArrowLeft, Pen, Type, Eraser } from 'lucide-react';
 import Link from 'next/link';
-import type { Session, Message } from '@/../../packages/shared/src/index';
 import { WebRTCManager, DrawingAction } from '@/lib/webrtc';
+import { Message, Session } from '@/lib';
 
 const SESSION_QUERY = gql`
   query Session($id: String!) {

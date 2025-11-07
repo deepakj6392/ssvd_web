@@ -25,8 +25,8 @@ export default function ResetPassword() {
   const [error, setError] = useState('');
 
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const token = searchParams.get('token') || '';
+  // const searchParams = useSearchParams();
+  const token =""// searchParams.get('token') || '';
 
   const [resetPassword, { loading }] = useMutation(RESET_PASSWORD_MUTATION, {
     onCompleted: (data) => {
