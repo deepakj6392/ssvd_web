@@ -1,8 +1,11 @@
 import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 
+const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://ssvd-6ru7.onrender.com";
+const graphqlEndpoint = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "/graphql";
+
 const httpLink = createHttpLink({
-  uri: 'http://10.160.2.165:3001/graphql', // Backend GraphQL endpoint
+  uri: `${backendUrl}${graphqlEndpoint}`, // Backend GraphQL endpoint
 });
 
 const authLink = setContext((_, { headers }) => {
