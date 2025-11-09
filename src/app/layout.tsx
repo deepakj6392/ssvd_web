@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import ApolloProviderWrapper from "@/components/ApolloProviderWrapper";
 import { AuthProvider } from "@/components/AuthProvider";
+import ConnectionStatus from "@/components/ConnectionStatus";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -32,6 +33,7 @@ export default function RootLayout({
         <ApolloProviderWrapper>
           <AuthProvider>
             {children}
+            <ConnectionStatus />
           </AuthProvider>
         </ApolloProviderWrapper>
       </body>
