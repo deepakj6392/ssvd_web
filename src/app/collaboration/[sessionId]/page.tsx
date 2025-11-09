@@ -13,6 +13,7 @@ import { Video, Mic, MicOff, Monitor, MessageSquare, Users, ArrowLeft, Pen, Type
 import Link from 'next/link';
 import { WebRTCManager, DrawingAction } from '@/lib/webrtc';
 import { Message, Session } from '@/lib';
+import { isMobile } from '@/lib/utils';
 
 const SESSION_QUERY = gql`
   query Session($id: String!) {
@@ -61,7 +62,6 @@ export default function SessionPage() {
 
   const [socket, setSocket] = useState<Socket | null>(null);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
-  const [peers, setPeers] = useState<{ [key: string]: Peer.Instance }>({});
   const [streams, setStreams] = useState<{ [key: string]: MediaStream }>({});
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
@@ -81,7 +81,6 @@ export default function SessionPage() {
 
   const userVideoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const peersRef = useRef<{ [key: string]: Peer.Instance }>({});
   const webrtcManagerRef = useRef<WebRTCManager | null>(null);
 
   const { data: sessionData, loading: sessionLoading, refetch: refetchSession } = useQuery(SESSION_QUERY, {
@@ -115,10 +114,18 @@ export default function SessionPage() {
 
     // Socket event listeners
     newSocket.on('signal', (data) => {
-      const peer = peersRef.current[data.fromUserId];
-      if (peer) {
-        peer.signal(data.data);
+      webrtcManagerRef.current?.handleSignal(data);
+    });
+
+    newSocket.on('user-joined', (data: { userId: string; sessionId: string }) => {
+      // Create peer for new user
+      if (data.userId !== 'test-user-id') {
+        webrtcManagerRef.current?.createPeer(data.userId);
       }
+    });
+
+    newSocket.on('user-left', (data: { userId: string }) => {
+      webrtcManagerRef.current?.removePeer(data.userId);
     });
 
     newSocket.on('chat-message', (message: Message) => {
@@ -153,52 +160,7 @@ export default function SessionPage() {
     };
   }, [sessionId]);
 
-  const createPeer = (userId: string, callerId: string, stream: MediaStream) => {
-    const peer = new Peer({
-      initiator: true,
-      trickle: false,
-      stream,
-    });
 
-    peer.on('signal', (data) => {
-      socket?.emit('signal', {
-        sessionId: currentSession?.id,
-        fromUserId: callerId,
-        toUserId: userId,
-        data,
-      });
-    });
-
-    peer.on('stream', (peerStream) => {
-      setStreams(prev => ({ ...prev, [userId]: peerStream }));
-    });
-
-    return peer;
-  };
-
-  const addPeer = (incomingSignal: any, callerId: string, stream: MediaStream) => {
-    const peer = new Peer({
-      initiator: false,
-      trickle: false,
-      stream,
-    });
-
-    peer.on('signal', (data) => {
-      socket?.emit('signal', {
-        sessionId: currentSession?.id,
-        fromUserId: callerId,
-        toUserId: callerId,
-        data,
-      });
-    });
-
-    peer.on('stream', (peerStream) => {
-      setStreams(prev => ({ ...prev, [callerId]: peerStream }));
-    });
-
-    peer.signal(incomingSignal);
-    return peer;
-  };
 
   const handleJoinSession = async () => {
     try {
@@ -207,49 +169,40 @@ export default function SessionPage() {
         setCurrentSession(data.joinSession);
         setIsJoined(true);
         socket?.emit('join-session', { sessionId, userId: 'test-user-id' });
-        initializeMedia();
+
+        // Initialize media and create peers for existing participants
+        const localStream = await webrtcManagerRef.current?.initializeMedia();
+        if (localStream) {
+          setStreams(prev => ({ ...prev, 'self': localStream }));
+          if (userVideoRef.current) {
+            userVideoRef.current.srcObject = localStream;
+          }
+        }
+
+        // Create peers for existing participants
+        const existingParticipants = data.joinSession.participants.filter((id: string) => id !== 'test-user-id');
+        existingParticipants.forEach((userId: string) => {
+          webrtcManagerRef.current?.createPeer(userId);
+        });
       }
     } catch (error) {
       console.error('Error joining session:', error);
     }
   };
 
-  const initializeMedia = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
 
-      if (userVideoRef.current) {
-        userVideoRef.current.srcObject = stream;
-      }
-
-      setStreams(prev => ({ ...prev, 'self': stream }));
-    } catch (error) {
-      console.error('Error accessing media devices:', error);
-    }
-  };
 
   const toggleAudio = () => {
-    const stream = streams['self'];
-    if (stream) {
-      const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsAudioEnabled(audioTrack.enabled);
-      }
+    const enabled = webrtcManagerRef.current?.toggleAudio();
+    if (enabled !== undefined) {
+      setIsAudioEnabled(enabled);
     }
   };
 
   const toggleVideo = () => {
-    const stream = streams['self'];
-    if (stream) {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        setIsVideoEnabled(videoTrack.enabled);
-      }
+    const enabled = webrtcManagerRef.current?.toggleVideo();
+    if (enabled !== undefined) {
+      setIsVideoEnabled(enabled);
     }
   };
 
@@ -566,7 +519,11 @@ export default function SessionPage() {
                     >
                       <Video className="h-4 w-4" />
                     </Button>
-                    <Button onClick={startScreenShare}>
+                    <Button
+                      onClick={startScreenShare}
+                      disabled={isMobile()}
+                      title={isMobile() ? "Screen sharing is not supported on mobile devices" : ""}
+                    >
                       <Monitor className="h-4 w-4" />
                     </Button>
                   </div>

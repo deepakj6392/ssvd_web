@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Video, Mic, MicOff, Monitor, MessageSquare, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { Session, Message } from '@/lib';
+import { isMobile } from '@/lib/utils';
 
 const SESSIONS_QUERY = gql`
   query Sessions {
@@ -414,7 +415,11 @@ export default function CollaborationPage() {
                     >
                       <Video className="h-4 w-4" />
                     </Button>
-                    <Button onClick={startScreenShare}>
+                    <Button
+                      onClick={startScreenShare}
+                      disabled={isMobile()}
+                      title={isMobile() ? "Screen sharing is not supported on mobile devices" : ""}
+                    >
                       <Monitor className="h-4 w-4" />
                     </Button>
                   </div>
