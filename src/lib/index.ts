@@ -17,6 +17,7 @@ export interface Session {
   id: string;
   name: string;
   hostId: string;
+  hostName?: string;
   participants: string[];
   createdAt: Date;
   isActive: boolean;
@@ -35,7 +36,7 @@ export interface SignalingMessage {
   sessionId: string;
   fromUserId: string;
   toUserId: string;
-  data: any;
+  data: unknown;
 }
 
 export const API_ENDPOINTS = {

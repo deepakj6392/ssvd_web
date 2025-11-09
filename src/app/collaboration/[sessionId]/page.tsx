@@ -7,13 +7,15 @@ import { io, Socket } from 'socket.io-client';
 import Peer from 'simple-peer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Video, Mic, MicOff, Monitor, MessageSquare, Users, ArrowLeft, Pen, Type, Eraser } from 'lucide-react';
 import Link from 'next/link';
 import { WebRTCManager, DrawingAction } from '@/lib/webrtc';
 import { Message, Session } from '@/lib';
 import { isMobile } from '@/lib/utils';
+import { useAuth } from '@/components/AuthProvider';
+import { getUserPreferences } from '@/lib/settings';
 
 const SESSION_QUERY = gql`
   query Session($id: String!) {
@@ -21,6 +23,7 @@ const SESSION_QUERY = gql`
       id
       name
       hostId
+      hostName
       participants
       createdAt
       isActive
@@ -34,6 +37,7 @@ const JOIN_SESSION_MUTATION = gql`
       id
       name
       hostId
+      hostName
       participants
       createdAt
       isActive
@@ -47,6 +51,7 @@ const SESSION_UPDATED_SUBSCRIPTION = gql`
       id
       name
       hostId
+      hostName
       participants
       createdAt
       isActive
@@ -59,12 +64,14 @@ const SESSION_UPDATED_SUBSCRIPTION = gql`
 export default function SessionPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
+  const { user } = useAuth();
 
   const [socket, setSocket] = useState<Socket | null>(null);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const [streams, setStreams] = useState<{ [key: string]: MediaStream }>({});
-  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(() => getUserPreferences().audioEnabled);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(() => getUserPreferences().videoEnabled);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -105,12 +112,18 @@ export default function SessionPage() {
   }, [sessionData]);
 
   useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isMounted) return;
+
     // Initialize socket connection
     const newSocket = io(process.env.NEXT_PUBLIC_BACKEND_URL|| 'http://10.160.2.165:3001');
     setSocket(newSocket);
 
     // Initialize WebRTC manager
-    webrtcManagerRef.current = new WebRTCManager(newSocket, 'test-user-id', sessionId);
+    webrtcManagerRef.current = new WebRTCManager(newSocket, user?.id || 'test-user-id', sessionId);
 
     // Socket event listeners
     newSocket.on('signal', (data) => {
@@ -164,13 +177,15 @@ export default function SessionPage() {
 
   const handleJoinSession = async () => {
     try {
+      console.log(sessionId, user)
       const { data } = await joinSession({ variables: { sessionId } });
+      console.log(data)
       if (data?.joinSession) {
         setCurrentSession(data.joinSession);
         setIsJoined(true);
 
-        // Initialize media first
-        const localStream = await webrtcManagerRef.current?.initializeMedia();
+        // Initialize media first (audio only)
+        const localStream = await webrtcManagerRef.current?.initializeMedia({ audio: true, video: true });
         if (localStream) {
           setStreams(prev => ({ ...prev, 'self': localStream }));
           if (userVideoRef.current) {
@@ -179,7 +194,7 @@ export default function SessionPage() {
         }
 
         // Join session after media is initialized
-        socket?.emit('join-session', { sessionId, userId: 'test-user-id' });
+        socket?.emit('join-session', { sessionId, userId: user?.id || 'test-user-id' });
 
         // Note: We don't create peers for existing participants here
         // The 'user-joined' event will be emitted to existing participants
@@ -208,8 +223,14 @@ export default function SessionPage() {
 
   const startScreenShare = async () => {
     try {
-      await webrtcManagerRef.current?.startScreenShare();
-      setIsScreenSharing(true);
+      const screenStream = await webrtcManagerRef.current?.startScreenShare();
+      if (screenStream) {
+        setIsScreenSharing(true);
+        // Update video element with screen share stream
+        if (userVideoRef.current) {
+          userVideoRef.current.srcObject = screenStream;
+        }
+      }
     } catch (error) {
       console.error('Error starting screen share:', error);
     }
@@ -315,12 +336,19 @@ export default function SessionPage() {
 
     socket?.emit('chat-message', {
       sessionId: currentSession.id,
-      userId: 'test-user-id',
-      content: newMessage,
+      userId: user?.id || 'test-user-id',
+      content: newMessage.trim(),
     });
 
     setNewMessage('');
   };
+
+  // Prevent hydration issues by not rendering until mounted
+  if (!isMounted) {
+    return <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 flex items-center justify-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>;
+  }
 
   if (sessionLoading) {
     return <div className="flex justify-center items-center h-screen">Loading session...</div>;
@@ -352,138 +380,235 @@ export default function SessionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 relative overflow-hidden">
+      {/* Animated Background Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
+        <div className="absolute top-0 right-1/4 w-96 h-96 bg-yellow-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
+        <div className="absolute -bottom-8 left-1/3 w-96 h-96 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
+      </div>
+
+      <div className="relative max-w-7xl mx-auto p-4">
+        <div className="flex items-center gap-4 mb-8 pt-4">
           <Link href="/collaboration">
-            <Button variant="outline">
+            <Button variant="outline" className="bg-white/80 backdrop-blur-sm border-gray-200 hover:bg-white/90 transition-all duration-300">
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
+              Back to Sessions
             </Button>
           </Link>
-          <h1 className="text-3xl font-bold">{currentSession.name}</h1>
-          <Badge variant="secondary">Session ID: {currentSession.id}</Badge>
+          <div className="flex-1">
+            <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent">
+              {currentSession.name}
+            </h1>
+            <div className="flex items-center gap-2 mt-2">
+              <Badge variant="secondary" className="bg-white/80 backdrop-blur-sm border-0 px-3 py-1">
+                <Users className="h-3 w-3 mr-1" />
+                {currentSession.participants.length} participants
+              </Badge>
+              <Badge variant={currentSession.isActive ? "default" : "secondary"} className="bg-white/80 backdrop-blur-sm border-0 px-3 py-1">
+                {currentSession.isActive ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+          </div>
         </div>
 
         {!isJoined ? (
-          <div className="max-w-md mx-auto">
-            <Card>
-              <CardHeader>
-                <CardTitle>Join Session</CardTitle>
+          <div className="max-w-lg mx-auto">
+            <Card className="group relative overflow-hidden border-0 shadow-2xl bg-white/90 backdrop-blur-sm hover:shadow-3xl transition-all duration-500">
+
+              <CardHeader className="text-center pb-6">
+                <div className="mx-auto mb-6 p-4 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl w-fit shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <Video className="h-10 w-10 text-white" />
+                </div>
+                <CardTitle className="text-2xl font-bold text-gray-800 mb-2">Join Session</CardTitle>
+                <CardDescription className="text-gray-600 text-lg">
+                  Ready to collaborate? Join this session to start connecting with your team.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                <div className="space-y-6">
                   <div>
-                    <p className="text-sm text-gray-600 mb-2">Session Details:</p>
-                    <div className="bg-gray-50 p-3 rounded">
-                      <p><strong>Name:</strong> {currentSession.name}</p>
-                      <p><strong>Host:</strong> {currentSession.hostId}</p>
-                      <p><strong>Participants:</strong> {currentSession.participants.length}</p>
-                      <p><strong>Status:</strong> {currentSession.isActive ? 'Active' : 'Inactive'}</p>
+                    <p className="text-sm font-semibold text-gray-700 mb-3">Session Details:</p>
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 p-4 rounded-xl border border-gray-200">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <span className="text-gray-500">Name:</span>
+                          <p className="font-semibold text-gray-800">{currentSession.name}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Host:</span>
+                          <p className="font-semibold text-gray-800">{currentSession.hostName || currentSession.hostId}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Participants:</span>
+                          <p className="font-semibold text-gray-800">{currentSession.participants.length}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Status:</span>
+                          <Badge variant={currentSession.isActive ? "default" : "secondary"} className="mt-1">
+                            {currentSession.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <Button onClick={handleJoinSession} className="w-full">
-                    Join Session
+                  <Button
+                    onClick={handleJoinSession}
+                  
+                    className="w-full py-4 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                  >
+                    <Video className="h-5 w-5 mr-3" />
+                    Join Session Now
                   </Button>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-500">
+                      Make sure your microphone is ready
+                    </p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             {/* Video Area */}
             <div className="lg:col-span-3">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Video className="h-5 w-5" />
-                    Video Conference
-                  </CardTitle>
+              <Card className="border-0 shadow-2xl bg-white/90 backdrop-blur-sm">
+                <CardHeader className="pb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl shadow-lg">
+                      <Video className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-2xl font-bold text-gray-800">Video Conference</CardTitle>
+                      <p className="text-gray-600">Real-time collaboration in progress</p>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Self Video */}
-                    <div className="relative">
+                    <div className="relative group">
                       <video
                         ref={userVideoRef}
                         autoPlay
                         muted
-                        className="w-full h-48 bg-black rounded"
+                        className="w-full h-64 bg-gray-900 rounded-2xl shadow-lg group-hover:shadow-xl transition-shadow duration-300"
                       />
-                      <div className="absolute bottom-2 left-2">
-                        <Badge variant="secondary">You</Badge>
+                      <div className="absolute bottom-4 left-4">
+                        <Badge className="bg-black/70 text-white border-0 px-3 py-1 text-sm font-medium">
+                          You
+                        </Badge>
                       </div>
+                      {!isVideoEnabled && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-800 rounded-2xl">
+                          <div className="w-20 h-20 bg-gray-600 rounded-full flex items-center justify-center">
+                            <Video className="h-10 w-10 text-gray-400" />
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Peer Videos */}
                     {Object.entries(streams).filter(([id]) => id !== 'self').map(([userId, stream]) => (
-                      <div key={userId} className="relative">
+                      <div key={userId} className="relative group">
                         <video
                           autoPlay
-                          className="w-full h-48 bg-black rounded"
+                          className="w-full h-64 bg-gray-900 rounded-2xl shadow-lg group-hover:shadow-xl transition-shadow duration-300"
                           ref={(video) => {
                             if (video && video.srcObject !== stream) {
                               video.srcObject = stream;
                             }
                           }}
                         />
-                        <div className="absolute bottom-2 left-2">
-                          <Badge variant="secondary">Peer {userId}</Badge>
+                        <div className="absolute bottom-4 left-4">
+                          <Badge className="bg-black/70 text-white border-0 px-3 py-1 text-sm font-medium">
+                            Peer {userId}
+                          </Badge>
                         </div>
                       </div>
                     ))}
                   </div>
 
                   {/* Drawing Controls */}
-                  <div className="flex flex-wrap justify-center gap-2 mt-4 p-2 bg-gray-50 rounded">
+                  <div className="flex flex-wrap justify-center gap-3 mt-6 p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-2xl border border-gray-200">
                     <Button
                       variant={isDrawingMode ? "default" : "outline"}
                       onClick={() => setIsDrawingMode(!isDrawingMode)}
-                      size="sm"
+                      className={`px-4 py-2 rounded-xl font-semibold transition-all duration-300 ${
+                        isDrawingMode
+                          ? 'bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-lg'
+                          : 'border-2 border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                      }`}
                     >
-                      <Pen className="h-4 w-4 mr-1" />
-                      Draw
+                      <Pen className="h-4 w-4 mr-2" />
+                      {isDrawingMode ? 'Exit Drawing' : 'Start Drawing'}
                     </Button>
 
                     {isDrawingMode && (
                       <>
+                        <div className="flex gap-2">
+                          <Button
+                            variant={drawingTool === 'pen' ? "default" : "outline"}
+                            onClick={() => setDrawingTool('pen')}
+                            className={`px-3 py-2 rounded-lg transition-all duration-300 ${
+                              drawingTool === 'pen'
+                                ? 'bg-gradient-to-r from-green-500 to-emerald-600 shadow-md'
+                                : 'border border-gray-300 hover:border-green-400'
+                            }`}
+                          >
+                            <Pen className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant={drawingTool === 'text' ? "default" : "outline"}
+                            onClick={() => setDrawingTool('text')}
+                            className={`px-3 py-2 rounded-lg transition-all duration-300 ${
+                              drawingTool === 'text'
+                                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 shadow-md'
+                                : 'border border-gray-300 hover:border-blue-400'
+                            }`}
+                          >
+                            <Type className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant={drawingTool === 'eraser' ? "default" : "outline"}
+                            onClick={() => setDrawingTool('eraser')}
+                            className={`px-3 py-2 rounded-lg transition-all duration-300 ${
+                              drawingTool === 'eraser'
+                                ? 'bg-gradient-to-r from-red-500 to-rose-600 shadow-md'
+                                : 'border border-gray-300 hover:border-red-400'
+                            }`}
+                          >
+                            <Eraser className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">Color:</span>
+                          <input
+                            type="color"
+                            value={drawingColor}
+                            onChange={(e) => setDrawingColor(e.target.value)}
+                            className="w-8 h-8 rounded-lg border-2 border-gray-300 cursor-pointer"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-700">Size:</span>
+                          <input
+                            type="range"
+                            min="1"
+                            max="10"
+                            value={drawingWidth}
+                            onChange={(e) => setDrawingWidth(Number(e.target.value))}
+                            className="w-20 accent-blue-500"
+                          />
+                          <span className="text-sm text-gray-600 w-6">{drawingWidth}</span>
+                        </div>
                         <Button
-                          variant={drawingTool === 'pen' ? "default" : "outline"}
-                          onClick={() => setDrawingTool('pen')}
-                          size="sm"
+                          onClick={clearCanvas}
+                          variant="destructive"
+                          className="px-4 py-2 rounded-xl font-semibold bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg hover:shadow-xl transition-all duration-300"
                         >
-                          <Pen className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant={drawingTool === 'text' ? "default" : "outline"}
-                          onClick={() => setDrawingTool('text')}
-                          size="sm"
-                        >
-                          <Type className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant={drawingTool === 'eraser' ? "default" : "outline"}
-                          onClick={() => setDrawingTool('eraser')}
-                          size="sm"
-                        >
-                          <Eraser className="h-4 w-4" />
-                        </Button>
-                        <input
-                          type="color"
-                          value={drawingColor}
-                          onChange={(e) => setDrawingColor(e.target.value)}
-                          className="w-8 h-8 rounded border"
-                        />
-                        <input
-                          type="range"
-                          min="1"
-                          max="10"
-                          value={drawingWidth}
-                          onChange={(e) => setDrawingWidth(Number(e.target.value))}
-                          className="w-16"
-                        />
-                        <Button onClick={clearCanvas} variant="destructive" size="sm">
-                          Clear
+                          Clear Canvas
                         </Button>
                       </>
                     )}
@@ -506,50 +631,65 @@ export default function SessionPage() {
                   )}
 
                   {/* Media Controls */}
-                  <div className="flex justify-center gap-4 mt-4">
+                  <div className="flex justify-center gap-6 mt-8">
                     <Button
                       variant={isAudioEnabled ? "default" : "destructive"}
                       onClick={toggleAudio}
+                      className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                        isAudioEnabled
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 shadow-lg hover:shadow-xl'
+                          : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg hover:shadow-xl'
+                      }`}
                     >
-                      {isAudioEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                      {isAudioEnabled ? <Mic className="h-5 w-5 mr-2" /> : <MicOff className="h-5 w-5 mr-2" />}
+                      {isAudioEnabled ? 'Mic On' : 'Mic Off'}
                     </Button>
                     <Button
                       variant={isVideoEnabled ? "default" : "destructive"}
                       onClick={toggleVideo}
+                      className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 ${
+                        isVideoEnabled
+                          ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg hover:shadow-xl'
+                          : 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg hover:shadow-xl'
+                      }`}
                     >
-                      <Video className="h-4 w-4" />
+                      <Video className="h-5 w-5 mr-2" />
+                      {isVideoEnabled ? 'Video On' : 'Video Off'}
                     </Button>
                     <Button
                       onClick={startScreenShare}
-                      disabled={isMobile()}
-                      title={isMobile() ? "Screen sharing is not supported on mobile devices" : ""}
+                      className="px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all duration-300"
                     >
-                      <Monitor className="h-4 w-4" />
+                      <Monitor className="h-5 w-5 mr-2" />
+                      Share Screen
                     </Button>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Chat */}
+            {/* Enhanced Chat */}
             <div className="lg:col-span-1">
-              <Card className="h-full">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MessageSquare className="h-5 w-5" />
-                    Chat
-                  </CardTitle>
+              <Card className="h-full border-0 shadow-2xl bg-white/90 backdrop-blur-sm">
+                <CardHeader className="pb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gradient-to-br from-green-500 to-teal-600 rounded-lg shadow-lg">
+                      <MessageSquare className="h-5 w-5 text-white" />
+                    </div>
+                    <CardTitle className="text-xl font-bold text-gray-800">Team Chat</CardTitle>
+                  </div>
                 </CardHeader>
                 <CardContent className="flex flex-col h-96">
-                  <div className="flex-1 overflow-y-auto mb-4 space-y-3">
+                  <div className="flex-1 overflow-y-auto mb-4 space-y-4 p-2">
                     {chatMessages.length === 0 ? (
-                      <div className="text-center text-gray-500 text-sm py-8">
-                        <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        No messages yet. Start the conversation!
+                      <div className="text-center py-12">
+                        <MessageSquare className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 text-lg">No messages yet</p>
+                        <p className="text-gray-400 text-sm">Start the conversation!</p>
                       </div>
                     ) : (
                       chatMessages.map((message, index) => {
-                        const isCurrentUser = message.userId === 'test-user-id';
+                        const isCurrentUser = message.userId === (user?.id || 'test-user-id');
                         const showAvatar = index === 0 || chatMessages[index - 1].userId !== message.userId;
 
                         return (
@@ -558,7 +698,7 @@ export default function SessionPage() {
                             className={`flex gap-3 ${isCurrentUser ? 'justify-end' : 'justify-start'}`}
                           >
                             {!isCurrentUser && showAvatar && (
-                              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                                 {message.userId.charAt(0).toUpperCase()}
                               </div>
                             )}
@@ -570,10 +710,10 @@ export default function SessionPage() {
                                 </div>
                               )}
                               <div
-                                className={`px-3 py-2 rounded-lg text-sm ${
+                                className={`px-4 py-3 rounded-2xl text-sm ${
                                   isCurrentUser
-                                    ? 'bg-blue-500 text-white rounded-br-sm'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-bl-sm'
+                                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-br-sm'
+                                    : 'bg-gray-50 border border-gray-200 text-gray-700 rounded-bl-sm'
                                 }`}
                               >
                                 {message.content}
@@ -583,7 +723,7 @@ export default function SessionPage() {
                               </div>
                             </div>
                             {isCurrentUser && showAvatar && (
-                              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                              <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-teal-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
                                 Y
                               </div>
                             )}
@@ -593,20 +733,20 @@ export default function SessionPage() {
                       })
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-3">
                     <Input
                       placeholder="Type your message..."
                       value={newMessage}
                       onChange={(e) => setNewMessage(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                      className="flex-1"
+                      className="flex-1 border-2 border-gray-200 focus:border-blue-500 rounded-xl px-4 py-3 transition-colors"
                     />
                     <Button
                       onClick={sendMessage}
                       disabled={!newMessage.trim()}
-                      size="sm"
+                      className="px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <MessageSquare className="h-4 w-4" />
+                      Send
                     </Button>
                   </div>
                 </CardContent>

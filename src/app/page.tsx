@@ -6,6 +6,7 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import './home-styles.css';
 import { Globe, Zap, Shield, Users, Video } from 'lucide-react';
 import Link from 'next/link';
 
@@ -37,6 +38,8 @@ function HomeContent() {
   );
 
   return (
+    <>
+    
     <div className="min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-black dark:to-zinc-900 pt-20">
       {/* Header */}
       <header className="fixed top-0 w-full border-b bg-white/90 backdrop-blur-md dark:bg-black/90 z-50">
@@ -52,9 +55,9 @@ function HomeContent() {
             <a href="#how-it-works" className="text-zinc-600 dark:text-zinc-400 hover:text-blue-600 transition-colors">
               How It Works
             </a>
-            <a href="/collaboration" className="text-zinc-600 dark:text-zinc-400 hover:text-blue-600 transition-colors">
+            <Link href="/collaboration" className="text-zinc-600 dark:text-zinc-400 hover:text-blue-600 transition-colors">
               Collaborate
-            </a>
+            </Link>
           </nav>
           <div className="flex items-center space-x-4">
             <span className="text-sm text-zinc-600 dark:text-zinc-400 hidden sm:block">
@@ -68,13 +71,15 @@ function HomeContent() {
       </header>
 
       {/* Hero Section */}
-      <section className="container mx-auto px-4 py-20 text-center">
+      <section className="hero-section">
+        <div className="blob-1"></div><div className="blob-2"></div><div className="blob-3"></div>
+      <div className="hero-content container mx-auto px-4 py-20 text-center">
         <div className="max-w-4xl mx-auto">
-          <Badge variant="secondary" className="mb-4">
+          <Badge variant="secondary" className="mb-4 bg-white/80 backdrop-blur-sm border-0 shadow-lg">
             <Zap className="h-4 w-4 mr-1" />
             Real-Time Collaboration Platform
           </Badge>
-          <h1 className="text-6xl font-bold text-black dark:text-white mb-6 leading-tight">
+          <h1 className="text-6xl md:text-7xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent mb-6 leading-tight">
             Connect & <span className="text-blue-600">Collaborate</span>
           </h1>
           <p className="text-xl text-zinc-600 dark:text-zinc-400 mb-8 max-w-2xl mx-auto">
@@ -82,32 +87,33 @@ function HomeContent() {
             and cross-platform connectivity. Built for teams that work together, anywhere.
           </p>
           <div className="flex justify-center space-x-4 mb-12">
-            <Button size="lg" className="bg-blue-600 hover:bg-blue-700 text-lg px-8 py-3" asChild>
+            <Button size="lg" className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-lg px-8 py-4 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105" asChild>
               <Link href="/collaboration">
                 <Video className="mr-2 h-5 w-5" />
                 Start Collaborating
               </Link>
             </Button>
-            <Button size="lg" variant="outline" className="text-lg px-8 py-3" asChild>
+            <Button size="lg" variant="outline" className="text-lg px-8 py-4 border-2 border-gray-200 hover:border-blue-500 transition-all duration-300 hover:shadow-lg" asChild>
               <Link href="/register">Join the Platform</Link>
             </Button>
           </div>
 
           {/* Quick Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-3xl mx-auto">
-            <div className="text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
               <div className="text-3xl font-bold text-blue-600 mb-2">Real-Time</div>
               <div className="text-zinc-600 dark:text-zinc-400">Video & Audio</div>
             </div>
-            <div className="text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
               <div className="text-3xl font-bold text-green-600 mb-2">Cross-Platform</div>
               <div className="text-zinc-600 dark:text-zinc-400">Web & Desktop</div>
             </div>
-            <div className="text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
               <div className="text-3xl font-bold text-purple-600 mb-2">Secure</div>
               <div className="text-zinc-600 dark:text-zinc-400">End-to-End</div>
             </div>
           </div>
+        </div>
         </div>
       </section>
 
@@ -186,7 +192,7 @@ function HomeContent() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
               <div className="w-16 h-16 bg-blue-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-6">
                 1
               </div>
@@ -196,7 +202,7 @@ function HomeContent() {
               </p>
             </div>
 
-            <div className="text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
               <div className="w-16 h-16 bg-green-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-6">
                 2
               </div>
@@ -206,7 +212,7 @@ function HomeContent() {
               </p>
             </div>
 
-            <div className="text-center">
+            <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
               <div className="w-16 h-16 bg-purple-600 text-white rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-6">
                 3
               </div>
@@ -248,6 +254,8 @@ function HomeContent() {
         </div>
       </footer>
     </div>
+  
+    </>
   );
 }
 

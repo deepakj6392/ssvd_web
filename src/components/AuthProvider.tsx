@@ -2,10 +2,17 @@
 
 import { createContext, useContext, useState, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { isAuthenticated, setToken, removeToken } from '@/lib/auth';
+import { isAuthenticated, setToken, removeToken, getToken } from '@/lib/auth';
+import {jwtDecode} from 'jwt-decode';
 
 interface User {
   id: string;
+  email: string;
+  name?: string;
+}
+
+interface JwtPayload {
+  sub: string;
   email: string;
   name?: string;
 }
@@ -33,15 +40,42 @@ interface AuthProviderProps {
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [isLoggedIn, setIsLoggedIn] = useState(() => isAuthenticated());
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    // Initialize user state if authenticated
+    if (isAuthenticated()) {
+      const token = getToken();
+      if (token) {
+        try {
+          const decoded: JwtPayload = jwtDecode(token);
+          return {
+            id: decoded.sub,
+            email: decoded.email,
+            name: decoded.name,
+          };
+        } catch (error) {
+          console.error('Failed to decode JWT token:', error);
+          return null;
+        }
+      }
+    }
+    return null;
+  });
   const router = useRouter();
 
   const login = (token: string) => {
     setToken(token);
     setIsLoggedIn(true);
-    // TODO: Decode JWT to get user info
-    // For now, we'll set a placeholder user
-    setUser({ id: '1', email: 'user@example.com', name: 'User' });
+    try {
+      const decoded: JwtPayload = jwtDecode(token);
+      setUser({
+        id: decoded.sub,
+        email: decoded.email,
+        name: decoded.name,
+      });
+    } catch (error) {
+      console.error('Failed to decode JWT token:', error);
+      setUser(null);
+    }
     router.push('/');
   };
 
