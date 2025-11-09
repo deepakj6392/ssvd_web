@@ -74,13 +74,34 @@ export class WebRTCManager {
     }
   }
 
-  stopScreenShare(): void {
+  async stopScreenShare(): Promise<void> {
     if (this.localStream) {
       const videoTrack = this.localStream.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.stop();
-        // Reinitialize camera
-        this.initializeMedia({ video: true, audio: true });
+        // Remove the screen share track
+        this.localStream.removeTrack(videoTrack);
+
+        // Reinitialize camera and replace track
+        try {
+          const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const newVideoTrack = newStream.getVideoTracks()[0];
+          this.localStream.addTrack(newVideoTrack);
+
+          // Update all existing peers with new stream
+          this.peers.forEach((peerConnection) => {
+            const oldTrack = peerConnection.peer.streams[0]?.getVideoTracks()[0];
+            if (oldTrack) {
+              peerConnection.peer.replaceTrack(
+                oldTrack,
+                newVideoTrack,
+                this.localStream!
+              );
+            }
+          });
+        } catch (error) {
+          console.error('Error reinitializing camera after screen share:', error);
+        }
       }
     }
   }

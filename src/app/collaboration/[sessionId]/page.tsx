@@ -16,6 +16,7 @@ import { Message, Session } from '@/lib';
 import { isMobile } from '@/lib/utils';
 import { useAuth } from '@/components/AuthProvider';
 import { getUserPreferences } from '@/lib/settings';
+import { client } from '@/lib/auth';
 
 const SESSION_QUERY = gql`
   query Session($id: String!) {
@@ -64,7 +65,7 @@ const SESSION_UPDATED_SUBSCRIPTION = gql`
 export default function SessionPage() {
   const params = useParams();
   const sessionId = params.sessionId as string;
-  const { user } = useAuth();
+  const { user, isLoggedIn } = useAuth();
 
   const [socket, setSocket] = useState<Socket | null>(null);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
@@ -93,9 +94,12 @@ export default function SessionPage() {
   const { data: sessionData, loading: sessionLoading, refetch: refetchSession } = useQuery(SESSION_QUERY, {
     variables: { id: sessionId },
     skip: !sessionId,
+    client,
   });
 
-  const [joinSession] = useMutation(JOIN_SESSION_MUTATION);
+  const [joinSession] = useMutation(JOIN_SESSION_MUTATION, {
+    client,
+  });
 
   useSubscription(SESSION_UPDATED_SUBSCRIPTION, {
     onData: ({ data }) => {
@@ -103,11 +107,16 @@ export default function SessionPage() {
         setCurrentSession(data.data.sessionUpdated);
       }
     },
+    client,
   });
 
   useEffect(() => {
     if (sessionData?.session) {
       setCurrentSession(sessionData.session);
+      // Load existing chat messages
+      if (sessionData.session.messages) {
+        setChatMessages(sessionData.session.messages);
+      }
     }
   }, [sessionData]);
 
@@ -127,13 +136,13 @@ export default function SessionPage() {
 
     // Socket event listeners
     newSocket.on('signal', (data) => {
-      webrtcManagerRef.current?.handleSignal(data);
+      webrtcManagerRef.current?.addPeer(data.fromUserId, data.data);
     });
 
     newSocket.on('user-joined', (data: { userId: string; sessionId: string }) => {
       // Create peer for new user (we initiate the connection)
-      if (data.userId !== 'test-user-id') {
-        webrtcManagerRef.current?.createPeer(data.userId);
+      if (data.userId !== (user?.id || 'test-user-id')) {
+        webrtcManagerRef.current?.createPeer(data.userId, true); // true = initiator
       }
     });
 
@@ -143,6 +152,8 @@ export default function SessionPage() {
 
     newSocket.on('chat-message', (message: Message) => {
       setChatMessages(prev => [...prev, message]);
+      // Update session data to include new message
+      refetchSession();
     });
 
     newSocket.on('drawing-action', (data: { action: DrawingAction }) => {
@@ -176,6 +187,11 @@ export default function SessionPage() {
 
 
   const handleJoinSession = async () => {
+    if (!isLoggedIn) {
+      console.error('User not authenticated');
+      return;
+    }
+
     try {
       console.log(sessionId, user)
       const { data } = await joinSession({ variables: { sessionId } });
@@ -196,9 +212,11 @@ export default function SessionPage() {
         // Join session after media is initialized
         socket?.emit('join-session', { sessionId, userId: user?.id || 'test-user-id' });
 
-        // Note: We don't create peers for existing participants here
-        // The 'user-joined' event will be emitted to existing participants
-        // and they will create peers for us (the new joiner)
+        // Create peers for existing participants (as non-initiator)
+        const existingParticipants = data.joinSession.participants.filter((id: string) => id !== (user?.id || 'test-user-id'));
+        existingParticipants.forEach((participantId: string) => {
+          webrtcManagerRef.current?.createPeer(participantId, false); // false = non-initiator
+        });
       }
     } catch (error) {
       console.error('Error joining session:', error);
@@ -233,6 +251,20 @@ export default function SessionPage() {
       }
     } catch (error) {
       console.error('Error starting screen share:', error);
+    }
+  };
+
+  const stopScreenShare = async () => {
+    try {
+      await webrtcManagerRef.current?.stopScreenShare();
+      setIsScreenSharing(false);
+      // Update video element back to local stream
+      const localStream = webrtcManagerRef.current?.getLocalStream();
+      if (localStream && userVideoRef.current) {
+        userVideoRef.current.srcObject = localStream;
+      }
+    } catch (error) {
+      console.error('Error stopping screen share:', error);
     }
   };
 
@@ -452,14 +484,26 @@ export default function SessionPage() {
                       </div>
                     </div>
                   </div>
-                  <Button
-                    onClick={handleJoinSession}
-                  
-                    className="w-full py-4 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                  >
-                    <Video className="h-5 w-5 mr-3" />
-                    Join Session Now
-                  </Button>
+                  {!isLoggedIn ? (
+                    <div className="text-center p-4 bg-red-50 border border-red-200 rounded-xl">
+                      <p className="text-red-600 font-medium">Authentication Required</p>
+                      <p className="text-red-500 text-sm mt-1">Please log in to join the session.</p>
+                      <Link href="/login">
+                        <Button className="mt-3 bg-red-600 hover:bg-red-700">
+                          Go to Login
+                        </Button>
+                      </Link>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={handleJoinSession}
+
+                      className="w-full py-4 text-lg font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                    >
+                      <Video className="h-5 w-5 mr-3" />
+                      Join Session Now
+                    </Button>
+                  )}
                   <div className="text-center">
                     <p className="text-sm text-gray-500">
                       Make sure your microphone is ready
@@ -657,11 +701,15 @@ export default function SessionPage() {
                       {isVideoEnabled ? 'Video On' : 'Video Off'}
                     </Button>
                     <Button
-                      onClick={startScreenShare}
-                      className="px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all duration-300"
+                      onClick={isScreenSharing ? stopScreenShare : startScreenShare}
+                      className={`px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 ${
+                        isScreenSharing
+                          ? 'bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700'
+                          : 'bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700'
+                      }`}
                     >
                       <Monitor className="h-5 w-5 mr-2" />
-                      Share Screen
+                      {isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
                     </Button>
                   </div>
                 </CardContent>
