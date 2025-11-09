@@ -129,8 +129,53 @@ export class WebRTCManager {
   }
 
   addPeer(userId: string, signal: any): void {
-    const peer = this.createPeer(userId, false);
-    peer.signal(signal);
+    let peerConnection = this.peers.get(userId);
+    if (!peerConnection) {
+      // Create peer as non-initiator (receiving peer)
+      const peer = new Peer({
+        initiator: false,
+        trickle: false,
+        stream: this.localStream,
+      });
+
+      peer.on('signal', (data) => {
+        this.socket.emit('signal', {
+          sessionId: this.sessionId,
+          fromUserId: this.userId,
+          toUserId: userId,
+          data,
+        });
+      });
+
+      peer.on('stream', (stream) => {
+        this.peers.set(userId, {
+          ...this.peers.get(userId)!,
+          stream,
+        });
+
+        if (this.onStreamCallback) {
+          this.onStreamCallback(userId, stream);
+        }
+      });
+
+      peer.on('close', () => {
+        this.peers.delete(userId);
+        if (this.onPeerLeaveCallback) {
+          this.onPeerLeaveCallback(userId);
+        }
+      });
+
+      peer.on('error', (err) => {
+        console.error('Peer error:', err);
+        this.peers.delete(userId);
+      });
+
+      this.peers.set(userId, { peer, userId });
+      peerConnection = this.peers.get(userId)!;
+    }
+
+    // Signal the peer
+    peerConnection.peer.signal(signal);
   }
 
   handleSignal(data: any): void {

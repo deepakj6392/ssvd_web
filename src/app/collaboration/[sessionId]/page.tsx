@@ -118,7 +118,7 @@ export default function SessionPage() {
     });
 
     newSocket.on('user-joined', (data: { userId: string; sessionId: string }) => {
-      // Create peer for new user
+      // Create peer for new user (we initiate the connection)
       if (data.userId !== 'test-user-id') {
         webrtcManagerRef.current?.createPeer(data.userId);
       }
@@ -168,9 +168,8 @@ export default function SessionPage() {
       if (data?.joinSession) {
         setCurrentSession(data.joinSession);
         setIsJoined(true);
-        socket?.emit('join-session', { sessionId, userId: 'test-user-id' });
 
-        // Initialize media and create peers for existing participants
+        // Initialize media first
         const localStream = await webrtcManagerRef.current?.initializeMedia();
         if (localStream) {
           setStreams(prev => ({ ...prev, 'self': localStream }));
@@ -179,11 +178,12 @@ export default function SessionPage() {
           }
         }
 
-        // Create peers for existing participants
-        const existingParticipants = data.joinSession.participants.filter((id: string) => id !== 'test-user-id');
-        existingParticipants.forEach((userId: string) => {
-          webrtcManagerRef.current?.createPeer(userId);
-        });
+        // Join session after media is initialized
+        socket?.emit('join-session', { sessionId, userId: 'test-user-id' });
+
+        // Note: We don't create peers for existing participants here
+        // The 'user-joined' event will be emitted to existing participants
+        // and they will create peers for us (the new joiner)
       }
     } catch (error) {
       console.error('Error joining session:', error);
