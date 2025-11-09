@@ -114,7 +114,7 @@ export default function CollaborationPage() {
 
   useEffect(() => {
     // Initialize socket connection
-    const newSocket = io('http://10.160.2.165:3001');
+    const newSocket = io(process.env.NEXT_PUBLIC_BACKEND_URL || 'http://10.160.2.165:3001');
     setSocket(newSocket);
 
     // Socket event listeners
